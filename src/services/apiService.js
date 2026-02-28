@@ -159,6 +159,26 @@ class ApiService {
     });
   }
 
+  // ==================== TESTING (ESP32 NODO TEST) ====================
+
+  async getTestingData(limit = 50) {
+    return await this.request(`/testing/data?limit=${limit}`);
+  }
+
+  async getTestingStats() {
+    return await this.request('/testing/stats');
+  }
+
+  async getTestingLatest() {
+    return await this.request('/testing/latest');
+  }
+
+  async clearTestingData() {
+    return await this.request('/testing/clear', {
+      method: 'DELETE',
+    });
+  }
+
   // ==================== HEALTH ====================
 
   async healthCheck() {

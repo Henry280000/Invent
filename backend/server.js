@@ -642,6 +642,201 @@ app.post('/api/iot/publish', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== RUTAS DE TESTING (ESP32 NODO TEST) ====================
+
+// GET /api/testing/data - Obtener datos del nodo de prueba (ID 99)
+app.get('/api/testing/data', authenticateToken, async (req, res) => {
+  try {
+    const limit = req.query.limit || 50;
+    
+    // Obtener últimos datos del nodo test (HIELERA_99)
+    const query = `
+      SELECT 
+        isr.*,
+        sc.severity,
+        sc.category
+      FROM iot_sensor_readings isr
+      LEFT JOIN sensor_classifications sc ON sc.device_id = isr.device_id 
+        AND sc.classified_at >= DATE_SUB(NOW(), INTERVAL 1 MINUTE)
+      WHERE isr.device_id = 'HIELERA_99'
+      ORDER BY isr.recorded_at DESC
+      LIMIT ?
+    `;
+
+    const [data] = await pool.query(query, [parseInt(limit)]);
+
+    // Agrupar por tipo de sensor para facilitar visualización
+    const grouped = {
+      temperature: [],
+      humidity: [],
+      ethylene: []
+    };
+
+    data.forEach(row => {
+      if (grouped[row.sensor_type]) {
+        grouped[row.sensor_type].push({
+          value: row.sensor_value,
+          unit: row.unit,
+          severity: row.severity || 'normal',
+          timestamp: row.recorded_at
+        });
+      }
+    });
+
+    res.json({ 
+      testMode: true,
+      deviceId: 'HIELERA_99',
+      data: grouped,
+      rawData: data,
+      count: data.length
+    });
+  } catch (error) {
+    console.error('Error al obtener datos de testing:', error);
+    res.status(500).json({ error: 'Error al obtener datos de testing' });
+  }
+});
+
+// GET /api/testing/stats - Estadísticas del modo testing
+app.get('/api/testing/stats', authenticateToken, async (req, res) => {
+  try {
+    // Total de lecturas del nodo test
+    const [totalRows] = await pool.query(
+      `SELECT COUNT(*) as total FROM iot_sensor_readings WHERE device_id = 'HIELERA_99'`
+    );
+
+    // Últimas 24 horas
+    const [last24h] = await pool.query(
+      `SELECT COUNT(*) as count 
+       FROM iot_sensor_readings 
+       WHERE device_id = 'HIELERA_99' 
+       AND recorded_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
+    );
+
+    // Promedios de los últimos datos
+    const [avgData] = await pool.query(
+      `SELECT 
+        sensor_type,
+        AVG(sensor_value) as avg_value,
+        MIN(sensor_value) as min_value,
+        MAX(sensor_value) as max_value,
+        COUNT(*) as count
+       FROM iot_sensor_readings
+       WHERE device_id = 'HIELERA_99'
+       AND recorded_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+       GROUP BY sensor_type`
+    );
+
+    // Primera y última lectura
+    const [firstReading] = await pool.query(
+      `SELECT MIN(recorded_at) as first_timestamp 
+       FROM iot_sensor_readings 
+       WHERE device_id = 'HIELERA_99'`
+    );
+
+    const [lastReading] = await pool.query(
+      `SELECT MAX(recorded_at) as last_timestamp 
+       FROM iot_sensor_readings 
+       WHERE device_id = 'HIELERA_99'`
+    );
+
+    // Contadores por severidad
+    const [severityCounts] = await pool.query(
+      `SELECT 
+        severity,
+        COUNT(*) as count
+       FROM sensor_classifications
+       WHERE device_id = 'HIELERA_99'
+       AND classified_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+       GROUP BY severity`
+    );
+
+    const stats = {
+      testMode: true,
+      deviceId: 'HIELERA_99',
+      total_readings: totalRows[0]?.total || 0,
+      readings_24h: last24h[0]?.count || 0,
+      first_reading: firstReading[0]?.first_timestamp,
+      last_reading: lastReading[0]?.last_timestamp,
+      averages: avgData.reduce((acc, row) => {
+        acc[row.sensor_type] = {
+          avg: parseFloat(row.avg_value).toFixed(2),
+          min: parseFloat(row.min_value).toFixed(2),
+          max: parseFloat(row.max_value).toFixed(2),
+          count: row.count
+        };
+        return acc;
+      }, {}),
+      severity_summary: severityCounts.reduce((acc, row) => {
+        acc[row.severity] = row.count;
+        return acc;
+      }, { normal: 0, warning: 0, critical: 0 })
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Error al obtener estadísticas de testing:', error);
+    res.status(500).json({ error: 'Error al obtener estadísticas de testing' });
+  }
+});
+
+// GET /api/testing/latest - Obtener última lectura del nodo test
+app.get('/api/testing/latest', authenticateToken, async (req, res) => {
+  try {
+    const [latestData] = await pool.query(
+      `SELECT 
+        sensor_type,
+        sensor_value,
+        unit,
+        recorded_at
+       FROM iot_sensor_readings
+       WHERE device_id = 'HIELERA_99'
+       AND recorded_at = (
+         SELECT MAX(recorded_at) 
+         FROM iot_sensor_readings 
+         WHERE device_id = 'HIELERA_99'
+       )`
+    );
+
+    const latest = latestData.reduce((acc, row) => {
+      acc[row.sensor_type] = {
+        value: row.sensor_value,
+        unit: row.unit,
+        timestamp: row.recorded_at
+      };
+      return acc;
+    }, {});
+
+    res.json({
+      testMode: true,
+      deviceId: 'HIELERA_99',
+      data: latest,
+      hasData: latestData.length > 0
+    });
+  } catch (error) {
+    console.error('Error al obtener última lectura:', error);
+    res.status(500).json({ error: 'Error al obtener última lectura' });
+  }
+});
+
+// DELETE /api/testing/clear - Limpiar todos los datos de testing (solo admin)
+app.delete('/api/testing/clear', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    // Eliminar clasificaciones primero (foreign key)
+    await pool.query(`DELETE FROM sensor_classifications WHERE device_id = 'HIELERA_99'`);
+    
+    // Eliminar lecturas
+    const [result] = await pool.query(`DELETE FROM iot_sensor_readings WHERE device_id = 'HIELERA_99'`);
+
+    res.json({ 
+      message: 'Datos de testing eliminados correctamente',
+      deletedRows: result.affectedRows
+    });
+  } catch (error) {
+    console.error('Error al limpiar datos de testing:', error);
+    res.status(500).json({ error: 'Error al limpiar datos de testing' });
+  }
+});
+
 // ==================== HEALTH CHECK ====================
 
 app.get('/api/health', async (req, res) => {

@@ -6,6 +6,7 @@ import { AdminPanel } from './components/admin/AdminPanel';
 import { ClientTracking } from './components/client/ClientTracking';
 import { MainDashboard } from './components/dashboard/MainDashboard';
 import IoTDataView from './components/iot/IoTDataView';
+import TestingView from './components/testing/TestingView';
 
 /**
  * Componente principal con autenticación y navegación
@@ -76,6 +77,18 @@ const AppContent = () => {
             >
               Datos IoT
             </button>
+
+            <button
+              onClick={() => setCurrentView('testing')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
+                currentView === 'testing'
+                  ? 'border-amber-600 text-amber-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span className="text-lg">🔘</span>
+              Testing ESP32
+            </button>
             
             {isAdmin() && (
               <button
@@ -110,6 +123,7 @@ const AppContent = () => {
       <main className="max-w-7xl mx-auto">
         {currentView === 'dashboard' && <MainDashboard />}
         {currentView === 'iot-data' && <IoTDataView />}
+        {currentView === 'testing' && <TestingView />}
         {currentView === 'admin' && isAdmin() && <AdminPanel />}
         {currentView === 'tracking' && isClient() && <ClientTracking />}
       </main>
