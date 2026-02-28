@@ -67,6 +67,52 @@ Algoritmo avanzado que compara la curva de Amoniaco con la temperatura esperada:
 - Visualización de cadena de bloques
 - Estadísticas de validación
 
+## 🎛️ Sistema ESP32/ESP-NOW para Hieleras
+
+El proyecto incluye un **sistema completo de hardware IoT** con ESP32 para monitoreo de hieleras de transporte:
+
+### 📡 Arquitectura ESP32
+- **Gateway ESP32**: Access Point + ESP-NOW receiver + WebSocket server
+- **Nodos Hielera**: Sensores DHT22 + MQ-135 con transmisión ESP-NOW
+- **Backend WebSocket**: Bridge Node.js en puerto 8080
+- **Análisis Python**: Procesamiento estadístico y vida útil de alimentos
+
+### ⚡ Ventajas del Sistema
+- **Eficiencia energética**: ESP-NOW consume 98% menos que WiFi directo
+- **Alcance extendido**: Hasta 200m en exteriores
+- **Baja latencia**: <2ms entre nodos y Gateway
+- **Escalable**: Hasta 20 hieleras por Gateway
+- **Sin Internet**: Funciona en zonas rurales sin cobertura
+
+### 📚 Documentación ESP32
+- **[ESP32_SYSTEM_GUIDE.md](ESP32_SYSTEM_GUIDE.md)** - Guía completa del sistema
+- **[hardware/esp32-gateway/](hardware/esp32-gateway/)** - Firmware del Gateway
+- **[hardware/esp32-nodo-hielera/](hardware/esp32-nodo-hielera/)** - Firmware de nodos
+- **[python/esp32_processor.py](python/esp32_processor.py)** - Script de análisis
+
+### 🚀 Quick Start ESP32
+```bash
+# 1. Flashear Gateway (Arduino IDE)
+# Abrir: hardware/esp32-gateway/esp32-gateway.ino
+# Subir a ESP32 #1
+
+# 2. Flashear Nodos (cambiar HIELERA_ID)
+# Abrir: hardware/esp32-nodo-hielera/esp32-nodo-hielera.ino
+# Cambiar ID y MAC del Gateway
+# Subir a ESP32 #2, #3, etc.
+
+# 3. Instalar dependencias Python
+cd python
+pip install -r requirements.txt
+
+# 4. Ejecutar análisis
+python esp32_processor.py
+```
+
+Ver **[ESP32_SYSTEM_GUIDE.md](ESP32_SYSTEM_GUIDE.md)** para instrucciones detalladas.
+
+---
+
 ## 🚀 Instalación Rápida
 
 ### Opción 1: Con Docker (Recomendado) 🐳
@@ -274,9 +320,21 @@ Ver `src/proto/sensordata.proto` para el schema completo.
 
 ## 🏗️ Arquitectura del Proyecto
 
+### Frontend (React + Vite)
 ```
 src/
 ├── components/
+│   ├── admin/
+│   │   └── AdminPanel.jsx           # Panel administrador
+│   ├── auth/
+│   │   ├── Login.jsx                # Login
+│   │   └── Register.jsx             # Registro
+│   ├── client/
+│   │   └── ClientTracking.jsx       # Tracking para clientes
+│   ├── dashboard/
+│   │   └── MainDashboard.jsx        # Dashboard principal
+│   ├── iot/
+│   │   └── IoTDataView.jsx          # Vista de datos IoT
 │   ├── alerts/
 │   │   └── AlertSystem.jsx          # Sistema de alertas
 │   ├── monitoring/
@@ -287,9 +345,13 @@ src/
 │   │   ├── EnvironmentalCard.jsx    # Sensores ambientales
 │   │   └── SecurityCard.jsx         # Sensores de seguridad
 │   └── ui/
-│       └── Indicators.jsx           # Componentes UI reutilizables
+│       ├── Indicators.jsx           # Componentes UI reutilizables
+│       └── SimulatorControls.jsx    # Controles del simulador
+├── contexts/
+│   └── AuthContext.jsx              # Context de autenticación
 ├── services/
 │   ├── alertService.js              # Lógica de alertas
+│   ├── apiService.js                # Cliente API REST
 │   ├── hashChainService.js          # Validación de hash-chain
 │   ├── mqttService.js               # Cliente MQTT
 │   └── protobufService.js           # Decodificador Protobuf
@@ -302,15 +364,88 @@ src/
 └── index.css                        # Estilos globales
 ```
 
+### Backend (Node.js + Express)
+```
+backend/
+├── services/
+│   ├── mqttService.js               # Servicio MQTT con clasificación
+│   └── esp32WebSocketService.js     # WebSocket para ESP32 Gateway
+├── scripts/
+│   └── init-db.js                   # Inicialización de base de datos
+├── server.js                        # Servidor principal
+└── package.json
+```
+
+### Hardware (ESP32 + Sensores)
+```
+hardware/
+├── esp32-gateway/
+│   └── esp32-gateway.ino            # Firmware Gateway (ESP-NOW + WiFi AP)
+└── esp32-nodo-hielera/
+    └── esp32-nodo-hielera.ino       # Firmware Nodo (DHT22 + MQ-135)
+```
+
+### Python (Análisis Estadístico)
+```
+python/
+├── esp32_processor.py               # Procesador de datos en tiempo real
+└── requirements.txt                 # Dependencias Python
+```
+
+### Base de Datos (MySQL)
+```
+database/
+└── schema.sql                       # Schema completo con 12+ tablas
+```
+
+### Docker (Infraestructura)
+```
+docker-compose.yml                   # MySQL + Mosquitto MQTT
+mosquitto/config/mosquitto.conf      # Configuración MQTT Broker
+Dockerfile.backend                   # Backend containerizado
+```
+
 ## 🎨 Tecnologías Utilizadas
 
-- **React 18.3**: Biblioteca UI
-- **Vite 5.1**: Build tool y dev server
-- **Tailwind CSS 3.4**: Framework de estilos
-- **MQTT.js 5.3**: Cliente MQTT para WebSockets
-- **Protobuf.js 7.2**: Codificación/decodificación de Protocol Buffers
+### Frontend
+- **React 18.3**: Biblioteca UI con hooks
+- **Vite 5.1**: Build tool y dev server ultrarrápido
+- **Tailwind CSS 3.4**: Framework de estilos utility-first
+- **Font Awesome 6.5**: Iconos profesionales
 - **Recharts 2.12**: Gráficas y visualizaciones
-- **Lucide React 0.344**: Iconos
+
+### Backend
+- **Node.js 18+**: Runtime JavaScript
+- **Express 4.18**: Framework web minimalista
+- **MySQL 8.0**: Base de datos relacional
+- **JWT**: Autenticación con tokens
+- **bcrypt**: Hash seguro de passwords
+- **MQTT.js 5.3**: Cliente MQTT para WebSockets
+- **ws 8.x**: WebSocket server para ESP32
+
+### Hardware & IoT
+- **ESP32**: Microcontrolador WiFi + Bluetooth
+- **ESP-NOW**: Protocolo propietario de baja latencia
+- **DHT22**: Sensor de temperatura y humedad
+- **MQ-135**: Sensor de gases (NH₃, CO₂, etileno)
+- **Arduino IDE**: Programación de firmware
+
+### Análisis & Visualización
+- **Python 3.10+**: Lenguaje de análisis
+- **pandas 2.1**: Manipulación de datos
+- **plotly 5.18**: Gráficas interactivas HTML
+- **matplotlib 3.8**: Gráficas científicas
+- **openpyxl 3.1**: Exportación a Excel
+
+### Infraestructura
+- **Docker & Docker Compose**: Containerización
+- **Mosquitto**: MQTT Broker open source
+- **Protocol Buffers**: Serialización eficiente
+
+### DevOps
+- **Git & GitHub**: Control de versiones
+- **ESLint**: Linting de código JavaScript
+- **npm**: Gestor de paquetes
 
 ## 📊 Características de Visualización
 
