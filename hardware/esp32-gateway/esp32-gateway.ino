@@ -7,12 +7,18 @@
  * 3. Transmite datos en tiempo real vía WebSocket
  * 
  * Hardware: ESP32 DevKit v1 o compatible
+ * Compatible con: ESP32 Arduino Core 3.3.7
  */
 
 #include <WiFi.h>
 #include <esp_now.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
+
+// Version check
+#if !defined(ESP_ARDUINO_VERSION_MAJOR) || ESP_ARDUINO_VERSION_MAJOR < 3
+#warning "Este código está optimizado para ESP32 Arduino Core 3.x"
+#endif
 
 // ==================== CONFIGURACIÓN ====================
 
@@ -47,7 +53,8 @@ int connectedClients = 0;
 // ==================== CALLBACK ESP-NOW ====================
 
 // Callback cuando se reciben datos por ESP-NOW
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingDataBytes, int len) {
+// ESP32 Arduino Core 3.x usa esp_now_recv_info_t en lugar de mac address directo
+void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingDataBytes, int len) {
   memcpy(&incomingData, incomingDataBytes, sizeof(incomingData));
   
   // Validar ID de hielera
@@ -59,12 +66,18 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingDataBytes, int len) 
     lastData[index].timestamp = millis();
     dataReceived[index] = true;
     
-    // Log en Serial Monitor
-    Serial.printf("📦 Hielera %d: Temp=%.1f°C, Hum=%.1f%%, Eth=%.1fppm\n", 
+    // Log en Serial Monitor con MAC del remitente
+    Serial.printf("📦 Hielera %d: Temp=%.1f°C, Hum=%.1f%%, Eth=%.1fppm", 
                   incomingData.id, 
                   incomingData.temp, 
                   incomingData.hum, 
                   incomingData.ethylene);
+    
+    // Mostrar MAC del remitente (recv_info contiene src_addr y des_addr)
+    Serial.printf(" [MAC: %02X:%02X:%02X:%02X:%02X:%02X]\n",
+                  recv_info->src_addr[0], recv_info->src_addr[1], 
+                  recv_info->src_addr[2], recv_info->src_addr[3], 
+                  recv_info->src_addr[4], recv_info->src_addr[5]);
     
     // Enviar inmediatamente por WebSocket si hay clientes conectados
     if (connectedClients > 0) {
@@ -194,6 +207,10 @@ void setup() {
   Serial.println("\n📶 Configurando Access Point WiFi...");
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid, password);
+  
+  // Mostrar MAC Address del Gateway (útil para configurar nodos)
+  Serial.print("📍 MAC Address del Gateway: ");
+  Serial.println(WiFi.macAddress());
   
   IPAddress IP = WiFi.softAPIP();
   Serial.println("✅ Access Point activo:");

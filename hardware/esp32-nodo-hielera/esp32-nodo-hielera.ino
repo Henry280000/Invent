@@ -12,11 +12,17 @@
  * - MQ-135 o análogo (pin GPIO 34 - ADC1)
  * 
  * IMPORTANTE: Cambiar HIELERA_ID para cada nodo (1, 2, 3...)
+ * Compatible con: ESP32 Arduino Core 3.3.7
  */
 
 #include <esp_now.h>
 #include <WiFi.h>
 #include <DHT.h>
+
+// Version check
+#if !defined(ESP_ARDUINO_VERSION_MAJOR) || ESP_ARDUINO_VERSION_MAJOR < 3
+#warning "Este código está optimizado para ESP32 Arduino Core 3.x"
+#endif
 
 // ==================== CONFIGURACIÓN ====================
 
@@ -68,7 +74,13 @@ void readDHT22() {
   
   // Verificar si las lecturas fallaron
   if (isnan(temp) || isnan(hum)) {
-    Serial.println("❌ Error leyendo DHT22, usando valores por defecto");
+    Serial.println("❌ Error leyendo DHT22");
+    Serial.println("   Verificar:");
+    Serial.println("   - Cable DATA conectado a GPIO 4");
+    Serial.println("   - VCC conectado a 3.3V (NO 5V)");
+    Serial.println("   - GND conectado");
+    Serial.println("   - Resistencia pull-up 10kΩ entre DATA y VCC");
+    Serial.println("   - Esperar 2-3 segundos después del encendido");
     myData.temp = -99.0;  // Valor de error
     myData.hum = -99.0;
   } else {
@@ -83,12 +95,29 @@ void readMQ135() {
   // Leer valor analógico (0-4095 en ESP32)
   int rawValue = analogRead(MQ135_PIN);
   
+  // Diagnóstico mejorado
+  if (rawValue == 0) {
+    Serial.println("⚠️  MQ-135: Raw=0 - Sensor posiblemente desconectado");
+    Serial.println("   Verificar:");
+    Serial.println("   - Cable A0 del sensor conectado a GPIO 34");
+    Serial.println("   - VCC conectado (3.3V o 5V)");
+    Serial.println("   - GND conectado");
+    Serial.println("   - Sensor necesita 24-48h de calentamiento para precisión");
+  } else if (rawValue < 100) {
+    Serial.printf("⚠️  MQ-135: Raw=%d (muy bajo) - Revisar alimentación\n", rawValue);
+  } else {
+    Serial.printf("💨 MQ-135: Raw=%d", rawValue);
+  }
+  
   // Convertir a ppm (valores de ejemplo, calibrar según tu sensor)
   // Fórmula simplificada: ppm = (rawValue / 4095) * 1000
   float ethylenePPM = (rawValue / 4095.0) * 500.0; // Escala 0-500 ppm
   
   myData.ethylene = ethylenePPM;
-  Serial.printf("💨 MQ-135: Raw=%d, Etileno=%.1fppm\n", rawValue, ethylenePPM);
+  
+  if (rawValue > 0) {
+    Serial.printf(", Etileno=%.1fppm\n", ethylenePPM);
+  }
 }
 
 // ==================== CALLBACK ESP-NOW ====================
@@ -181,8 +210,31 @@ void setup() {
   Serial.println("\n🔬 Inicializando sensores...");
   dht.begin();
   pinMode(MQ135_PIN, INPUT);
-  delay(2000); // Dar tiempo al DHT22 para estabilizarse
+  Serial.println("⏱️  Esperando 3 segundos para estabilización del DHT22...");
+  delay(3000); // Dar más tiempo al DHT22 para estabilizarse
   Serial.println("✅ Sensores inicializados");
+  
+  // Prueba inicial de sensores
+  Serial.println("\n🔍 Prueba inicial de sensores:");
+  float testTemp = dht.readTemperature();
+  float testHum = dht.readHumidity();
+  int testMQ = analogRead(MQ135_PIN);
+  
+  Serial.println("─────────────────────────────────────────");
+  if (isnan(testTemp) || isnan(testHum)) {
+    Serial.println("❌ DHT22: NO RESPONDE");
+    Serial.println("   → Revisa conexiones del DHT22");
+  } else {
+    Serial.printf("✅ DHT22: Temp=%.1f°C, Hum=%.1f%%\n", testTemp, testHum);
+  }
+  
+  if (testMQ == 0) {
+    Serial.println("❌ MQ-135: Raw=0 (desconectado o sin alimentación)");
+    Serial.println("   → Revisa conexiones del MQ-135");
+  } else {
+    Serial.printf("✅ MQ-135: Raw=%d (funcionando)\n", testMQ);
+  }
+  Serial.println("─────────────────────────────────────────");
   
   // 5. Configurar datos iniciales
   myData.id = HIELERA_ID;
