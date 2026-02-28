@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package sensordata;
+
+// Mensaje para datos de sensores de seguridad
+message SecuritySensors {
+  bool ldr_light_detected = 1;      // LDR: true si hay entrada de luz
+  bool imu_movement_alert = 2;       // IMU: true si hay movimiento brusco
+  bool hall_magnet_attached = 3;     // Efecto Hall: true si está acoplado
+  double imu_acceleration_x = 4;     // Aceleración en X (g)
+  double imu_acceleration_y = 5;     // Aceleración en Y (g)
+  double imu_acceleration_z = 6;     // Aceleración en Z (g)
+}
+
+// Mensaje para sensores químicos
+message ChemicalSensors {
+  double ammonia_nh3 = 1;            // Nivel de amoniaco (ppm)
+  double trimethylamine_tma = 2;     // Nivel de TMA (ppm)
+  double ethylene = 3;               // Nivel de etileno (ppm)
+  uint32 duty_cycle_counter = 4;     // Contador de ciclos (30-45s cada 15 min)
+  uint64 next_reading_time = 5;      // Timestamp del próximo senseo
+}
+
+// Mensaje para sensores ambientales
+message EnvironmentalSensors {
+  double temperature = 1;            // Temperatura (°C)
+  double humidity = 2;               // Humedad relativa (%)
+  double pressure = 3;               // Presión atmosférica (hPa)
+}
+
+// Mensaje principal de telemetría
+message SensorData {
+  string device_id = 1;               // ID del dispositivo
+  uint64 timestamp = 2;               // Timestamp Unix (ms)
+  SecuritySensors security = 3;       // Datos de seguridad
+  ChemicalSensors chemical = 4;       // Datos químicos
+  EnvironmentalSensors environmental = 5; // Datos ambientales
+  string hash_previous = 6;           // Hash del mensaje anterior (SHA-256)
+  string hash_current = 7;            // Hash del mensaje actual
+  uint32 sequence_number = 8;         // Número de secuencia
+  double battery_voltage = 9;         // Voltaje de batería (V)
+  int32 signal_strength = 10;         // RSSI de LoRaWAN (dBm)
+}

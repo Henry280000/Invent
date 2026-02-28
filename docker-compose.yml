@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Broker MQTT
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: food_transport_mqtt
+    restart: always
+    ports:
+      - "1883:1883"      # MQTT
+      - "9001:9001"      # WebSocket
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - food_transport_network
+
+  # Base de datos MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: food_transport_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: food_transport
+      MYSQL_USER: foodapp
+      MYSQL_PASSWORD: foodapp123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - food_transport_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Backend API + MQTT Client
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: food_transport_backend
+    restart: always
+    environment:
+      NODE_ENV: development
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: foodapp
+      DB_PASSWORD: foodapp123
+      DB_NAME: food_transport
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      MQTT_BROKER: mqtt://mosquitto
+      MQTT_PORT: 1883
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    networks:
+      - food_transport_network
+    volumes:
+      - ./backend:/app/backend
+      - /app/backend/node_modules
+
+volumes:
+  mysql_data:
+  mosquitto_data:
+  mosquitto_log:
+
+networks:
+  food_transport_network:
+    driver: bridge
