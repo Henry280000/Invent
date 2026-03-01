@@ -9,26 +9,17 @@ const IoTDataView = () => {
   const [error, setError] = useState('');
 
   const categories = [
-    { id: 'temperature', name: 'Temperatura', unit: '°C' },
-    { id: 'humidity', name: 'Humedad', unit: '%' },
-    { id: 'pressure', name: 'Presión', unit: 'hPa' },
-    { id: 'gas', name: 'Gases', unit: 'ppm' },
-    { id: 'motion', name: 'Movimiento', unit: '' },
-    { id: 'light', name: 'Luz', unit: '' },
-    { id: 'location', name: 'Ubicación', unit: '' },
+    { id: 'temperature', name: 'Temperatura', unit: '°C', icon: 'fa-temperature-half' },
+    { id: 'humidity', name: 'Humedad', unit: '%', icon: 'fa-droplet' },
+    { id: 'ethylene', name: 'Etileno', unit: 'ppm', icon: 'fa-smog' },
   ];
 
   const getCategoryIcon = (categoryId) => {
-    const icons = {
-      temperature: <i className="fa-solid fa-temperature-half"></i>,
-      humidity: <i className="fa-solid fa-droplet"></i>,
-      pressure: <i className="fa-solid fa-gauge"></i>,
-      gas: <i className="fa-solid fa-smog"></i>,
-      motion: <i className="fa-solid fa-person-walking"></i>,
-      light: <i className="fa-solid fa-lightbulb"></i>,
-      location: <i className="fa-solid fa-location-dot"></i>,
-    };
-    return icons[categoryId] || null;
+    const category = categories.find(cat => cat.id === categoryId);
+    if (category && category.icon) {
+      return <i className={`fa-solid ${category.icon}`}></i>;
+    }
+    return null;
   };
 
   useEffect(() => {
@@ -68,21 +59,23 @@ const IoTDataView = () => {
   };
 
   const getSeverityColor = (severity) => {
+    const normalizedSeverity = severity ? severity.toLowerCase() : 'normal';
     const colors = {
       normal: 'bg-green-100 text-green-800',
       warning: 'bg-amber-100 text-amber-800',
       critical: 'bg-red-100 text-red-800',
     };
-    return colors[severity] || 'bg-gray-100 text-gray-800';
+    return colors[normalizedSeverity] || 'bg-gray-100 text-gray-800';
   };
 
   const getSeverityLabel = (severity) => {
+    const normalizedSeverity = severity ? severity.toLowerCase() : 'normal';
     const labels = {
       normal: 'Normal',
       warning: 'Advertencia',
       critical: 'Crítico',
     };
-    return labels[severity] || severity;
+    return labels[normalizedSeverity] || severity;
   };
 
   const formatTimestamp = (timestamp) => {
@@ -242,7 +235,7 @@ const IoTDataView = () => {
                       {reading.sensor_type}
                     </td>
                     <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                      {reading.sensor_value?.toFixed(2)} {reading.unit || ''}
+                      {parseFloat(reading.sensor_value).toFixed(2)} {reading.unit || ''}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <span

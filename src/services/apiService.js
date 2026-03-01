@@ -16,11 +16,14 @@ class ApiService {
   }
 
   getHeaders() {
+    // Siempre leer el token más reciente de localStorage
+    const token = localStorage.getItem('token') || this.token;
+    
     const headers = {
       'Content-Type': 'application/json',
     };
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
   }
@@ -107,6 +110,19 @@ class ApiService {
     return await this.request(`/shipments/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // ==================== SHIPMENT UPDATES ====================
+
+  async createShipmentUpdate(shipmentId, updateData) {
+    return await this.request(`/shipments/${shipmentId}/updates`, {
+      method: 'POST',
+      body: JSON.stringify(updateData),
+    });
+  }
+
+  async getShipmentUpdates(shipmentId) {
+    return await this.request(`/shipments/${shipmentId}/updates`);
   }
 
   // ==================== SENSOR DATA ====================

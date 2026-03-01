@@ -37,7 +37,8 @@
 
 // MAC Address del Gateway (DEBES OBTENERLA DEL GATEWAY)
 // Formato: {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
-uint8_t gatewayAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // REEMPLAZAR
+// Gateway MAC: E0:8C:FE:32:9E:CD
+uint8_t gatewayAddress[] = {0xE0, 0x8C, 0xFE, 0x32, 0x9E, 0xCD};
 
 // Pines
 #define BUTTON_PIN 13     // Botón en GPIO 13 (tiene pull-up interno)
@@ -90,7 +91,8 @@ void generateTestData() {
 // ==================== CALLBACK ESP-NOW ====================
 
 // Callback cuando se envían datos
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+// ESP32 Arduino Core 3.x usa wifi_tx_info_t en lugar de mac_addr
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
   sendSuccess = (status == ESP_NOW_SEND_SUCCESS);
   
   if (sendSuccess) {
@@ -182,9 +184,11 @@ void setup() {
                 gatewayAddress[3], gatewayAddress[4], gatewayAddress[5]);
   
   esp_now_peer_info_t peerInfo;
+  memset(&peerInfo, 0, sizeof(peerInfo));
   memcpy(peerInfo.peer_addr, gatewayAddress, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
+  peerInfo.ifidx = WIFI_IF_STA;  // Interfaz WiFi Station (requerido en Core 3.x)
   
   if (esp_now_add_peer(&peerInfo) != ESP_OK) {
     Serial.println("❌ Error agregando peer (Gateway)");

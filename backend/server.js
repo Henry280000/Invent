@@ -1,14 +1,14 @@
 /* eslint-env node */
 /* eslint-disable no-undef */
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config(); // Buscar .env en el directorio actual
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
-const MQTTService = require('./services/mqttService');
 const ESP32WebSocketService = require('./services/esp32WebSocketService');
+const ESP32GatewayClient = require('./services/esp32GatewayClient');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,14 +34,41 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
-// Inicializar servicio MQTT
-const mqttService = new MQTTService(pool);
-mqttService.connect();
-
-// Inicializar servicio WebSocket para ESP32
+// Inicializar servicio WebSocket para ESP32 (servidor para clientes web)
 const esp32WSService = new ESP32WebSocketService(pool, 8080);
 esp32WSService.start();
 console.log('✅ Servicio WebSocket ESP32 iniciado en puerto 8080');
+
+// Inicializar cliente para conectar al Gateway ESP32
+// IP por defecto del Gateway cuando crea Access Point: 192.168.4.1
+const gatewayHost = process.env.GATEWAY_HOST || '192.168.4.1';
+const gatewayPort = process.env.GATEWAY_PORT || 81;
+const esp32GatewayClient = new ESP32GatewayClient(pool, gatewayHost, gatewayPort);
+
+console.log('🔌 Intentando conectar al Gateway ESP32...');
+console.log(`   URL: ws://${gatewayHost}:${gatewayPort}`);
+console.log('💡 Asegúrate de estar conectado al WiFi: ESP32-Gateway-Hieleras');
+
+// Conectar al Gateway con un pequeño delay
+setTimeout(() => {
+  esp32GatewayClient.connect();
+}, 2000);
+
+// Configurar WebSocket Server para clientes web
+// Cuando un cliente web se conecta al puerto 8080, registrarlo con el Gateway Client
+const wss = esp32WSService.wss;
+if (wss) {
+  wss.on('connection', (ws) => {
+    console.log('🌐 Cliente web conectado al WebSocket del backend');
+    
+    // Registrar cliente web con el Gateway Client  
+    esp32GatewayClient.addWebClient(ws);
+    
+    ws.on('close', () => {
+      esp32GatewayClient.removeWebClient(ws);
+    });
+  });
+}
 
 // Middleware de autenticación
 const authenticateToken = (req, res, next) => {
@@ -386,6 +413,55 @@ app.delete('/api/shipments/:id', authenticateToken, requireAdmin, async (req, re
   }
 });
 
+// ==================== RUTAS DE ACTUALIZACIONES DE ENVÍO ====================
+
+// POST /api/shipments/:id/updates - Crear actualización de ubicación (solo admin)
+app.post('/api/shipments/:id/updates', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message, location } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'El mensaje es requerido' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO shipment_updates (shipment_id, message, location) VALUES (?, ?, ?)',
+      [id, message, location || null]
+    );
+
+    const [updates] = await pool.query(
+      'SELECT * FROM shipment_updates WHERE id = ?',
+      [result.insertId]
+    );
+
+    res.status(201).json({ 
+      message: 'Actualización creada exitosamente',
+      update: updates[0]
+    });
+  } catch (error) {
+    console.error('Error al crear actualización:', error);
+    res.status(500).json({ error: 'Error al crear actualización' });
+  }
+});
+
+// GET /api/shipments/:id/updates - Obtener actualizaciones de un envío
+app.get('/api/shipments/:id/updates', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [updates] = await pool.query(
+      'SELECT * FROM shipment_updates WHERE shipment_id = ? ORDER BY created_at DESC',
+      [id]
+    );
+
+    res.json({ updates });
+  } catch (error) {
+    console.error('Error al obtener actualizaciones:', error);
+    res.status(500).json({ error: 'Error al obtener actualizaciones' });
+  }
+});
+
 // ==================== RUTAS DE DATOS DE SENSORES ====================
 
 // POST /api/sensor-data/:shipmentId - Agregar datos de sensores
@@ -485,8 +561,8 @@ app.get('/api/users/clients', authenticateToken, requireAdmin, async (req, res) 
 
 // ==================== DATOS IOT Y CLASIFICACIONES ====================
 
-// GET /api/iot/readings - Obtener lecturas de sensores IoT
-app.get('/api/iot/readings', authenticateToken, async (req, res) => {
+// GET /api/iot/readings - Obtener lecturas de sensores IoT (público)
+app.get('/api/iot/readings', async (req, res) => {
   try {
     const { limit = 100, sensorType, truckId, deviceId } = req.query;
 
@@ -564,12 +640,10 @@ app.get('/api/iot/classifications', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/iot/stats - Estadísticas de clasificaciones
-app.get('/api/iot/stats', authenticateToken, async (req, res) => {
+// GET /api/iot/stats - Estadísticas de clasificaciones (público)
+app.get('/api/iot/stats', async (req, res) => {
   try {
-    const stats = await mqttService.getClassificationStats();
-    
-    // Estadísticas adicionales
+    // Estadísticas totales
     const [totals] = await pool.query(`
       SELECT 
         COUNT(DISTINCT device_id) as total_devices,
@@ -580,7 +654,7 @@ app.get('/api/iot/stats', authenticateToken, async (req, res) => {
     `);
 
     res.json({ 
-      classifications: stats,
+      classifications: [],
       totals: totals[0]
     });
   } catch (error) {
@@ -589,25 +663,35 @@ app.get('/api/iot/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/iot/by-category/:category - Datos agrupados por categoría
-app.get('/api/iot/by-category/:category', authenticateToken, async (req, res) => {
+// GET /api/iot/by-category/:category - Datos agrupados por categoría (público)
+app.get('/api/iot/by-category/:category', async (req, res) => {
   try {
     const { category } = req.params;
     const { limit = 50 } = req.query;
 
+    // Mapear categorías del frontend a sensor_type de la BD
+    const categoryMap = {
+      'temperature': 'temperature',
+      'humidity': 'humidity',
+      'pressure': 'pressure',
+      'gas': 'ethylene',
+      'ethylene': 'ethylene'
+    };
+
+    const sensorType = categoryMap[category] || category;
+
     const query = `
       SELECT 
         isr.*,
-        sc.severity,
-        sc.classification
+        'NORMAL' as severity,
+        isr.sensor_type as classification
       FROM iot_sensor_readings isr
-      INNER JOIN sensor_classifications sc ON sc.reading_id = isr.id
-      WHERE sc.category = ?
+      WHERE isr.sensor_type = ?
       ORDER BY isr.recorded_at DESC
       LIMIT ?
     `;
 
-    const [data] = await pool.query(query, [category, parseInt(limit)]);
+    const [data] = await pool.query(query, [sensorType, parseInt(limit)]);
 
     res.json({ 
       category,
@@ -621,26 +705,7 @@ app.get('/api/iot/by-category/:category', authenticateToken, async (req, res) =>
 });
 
 // POST /api/iot/publish - Publicar mensaje MQTT (para testing)
-app.post('/api/iot/publish', authenticateToken, async (req, res) => {
-  try {
-    const { topic, message } = req.body;
-
-    if (!topic || !message) {
-      return res.status(400).json({ error: 'Topic y message son requeridos' });
-    }
-
-    const success = mqttService.publish(topic, message);
-
-    if (success) {
-      res.json({ message: 'Mensaje publicado exitosamente', topic });
-    } else {
-      res.status(500).json({ error: 'Error al publicar mensaje' });
-    }
-  } catch (error) {
-    console.error('Error al publicar mensaje MQTT:', error);
-    res.status(500).json({ error: 'Error al publicar mensaje MQTT' });
-  }
-});
+// Endpoint /api/iot/publish eliminado - MQTT no disponible
 
 // ==================== RUTAS DE TESTING (ESP32 NODO TEST) ====================
 
@@ -834,6 +899,39 @@ app.delete('/api/testing/clear', authenticateToken, requireAdmin, async (req, re
   } catch (error) {
     console.error('Error al limpiar datos de testing:', error);
     res.status(500).json({ error: 'Error al limpiar datos de testing' });
+  }
+});
+
+// ==================== RUTAS ESP32 GATEWAY ====================
+
+// GET /api/gateway/status - Estado de conexión con el Gateway ESP32
+app.get('/api/gateway/status', authenticateToken, async (req, res) => {
+  try {
+    const status = esp32GatewayClient.getStatus();
+    res.json({
+      ...status,
+      message: status.connected 
+        ? 'Conectado al Gateway ESP32' 
+        : 'No conectado al Gateway ESP32. Verifica que estés conectado al WiFi: ESP32-Gateway-Hieleras'
+    });
+  } catch (error) {
+    console.error('Error al obtener estado del Gateway:', error);
+    res.status(500).json({ error: 'Error al obtener estado del Gateway' });
+  }
+});
+
+// GET /api/gateway/hieleras - Obtener datos actuales de todas las hieleras
+app.get('/api/gateway/hieleras', authenticateToken, async (req, res) => {
+  try {
+    const hieleras = esp32GatewayClient.getHielerasData();
+    res.json({
+      hieleras,
+      total: hieleras.length,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error al obtener datos de hieleras:', error);
+    res.status(500).json({ error: 'Error al obtener datos de hieleras' });
   }
 });
 

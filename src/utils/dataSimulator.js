@@ -1,4 +1,3 @@
-import mqttService from '../services/mqttService';
 import protobufService from '../services/protobufService';
 
 /**
@@ -147,10 +146,7 @@ class DataSimulator {
       await protobufService.initialize();
     }
 
-    // Conectar si no está conectado
-    if (!mqttService.isConnected()) {
-      await mqttService.connect();
-    }
+    console.log('⚠️  Nota: Simulador frontend deshabilitado - Usa el simulador backend');
 
     // Generar y enviar mensajes periódicamente
     this.intervalId = setInterval(async () => {
@@ -160,10 +156,8 @@ class DataSimulator {
         // Codificar a Protobuf
         const encoded = protobufService.encode(message);
         
-        // Publicar en MQTT
-        mqttService.publish('food/transport/sensors/SIM_DEVICE_001', Buffer.from(encoded));
-        
-        console.log(`📤 Simulated message #${this.sequenceNumber} sent [${this.scenarioMode}]`);
+        // Ya no se publica a MQTT - el simulador backend maneja esto
+        console.log(`📤 Simulated message #${this.sequenceNumber} generated [${this.scenarioMode}] - Backend simulator handles MQTT`);
       } catch (error) {
         console.error('❌ Error in simulator:', error);
       }

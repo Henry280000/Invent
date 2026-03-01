@@ -5,6 +5,8 @@ export const AdminPanel = () => {
   const [shipments, setShipments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNewShipment, setShowNewShipment] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [selectedShipment, setSelectedShipment] = useState(null);
   const [newShipment, setNewShipment] = useState({
     clientEmail: '',
     origin: '',
@@ -12,6 +14,10 @@ export const AdminPanel = () => {
     product: '',
     estimatedArrival: '',
     truckId: '',
+  });
+  const [updateForm, setUpdateForm] = useState({
+    message: '',
+    location: '',
   });
   const [error, setError] = useState('');
 
@@ -69,6 +75,32 @@ export const AdminPanel = () => {
       } catch (err) {
         setError('Error al eliminar envío: ' + err.message);
       }
+    }
+  };
+
+  const openUpdateModal = (shipment) => {
+    setSelectedShipment(shipment);
+    setUpdateForm({ message: '', location: '' });
+    setShowUpdateModal(true);
+  };
+
+  const handleSendUpdate = async (e) => {
+    e.preventDefault();
+    setError('');
+    
+    if (!updateForm.message.trim()) {
+      setError('El mensaje es requerido');
+      return;
+    }
+
+    try {
+      await apiService.createShipmentUpdate(selectedShipment.id, updateForm);
+      setShowUpdateModal(false);
+      setUpdateForm({ message: '', location: '' });
+      setSelectedShipment(null);
+      alert('Actualización enviada exitosamente al cliente');
+    } catch (err) {
+      setError('Error al enviar actualización: ' + err.message);
     }
   };
 
@@ -219,6 +251,76 @@ export const AdminPanel = () => {
         </div>
       )}
 
+      {/* Modal para enviar actualización */}
+      {showUpdateModal && selectedShipment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold mb-4">Enviar Actualización al Cliente</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Envío: <strong>{selectedShipment.truckId}</strong> - {selectedShipment.clientEmail}
+            </p>
+            
+            <form onSubmit={handleSendUpdate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ubicación Actual <span className="text-gray-400">(opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={updateForm.location}
+                  onChange={(e) => setUpdateForm({ ...updateForm, location: e.target.value })}
+                  placeholder="ej: En camino, Guadalajara, Jalisco"
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mensaje * <span className="text-xs text-gray-500">(máx. 500 caracteres)</span>
+                </label>
+                <textarea
+                  value={updateForm.message}
+                  onChange={(e) => setUpdateForm({ ...updateForm, message: e.target.value })}
+                  placeholder="Escribe aquí el mensaje para el cliente..."
+                  maxLength={500}
+                  rows={4}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {updateForm.message.length}/500 caracteres
+                </p>
+              </div>
+
+              {error && showUpdateModal && (
+                <p className="text-red-600 text-sm">{error}</p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors text-sm"
+                >
+                  📤 Enviar Actualización
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUpdateModal(false);
+                    setUpdateForm({ message: '', location: '' });
+                    setSelectedShipment(null);
+                    setError('');
+                  }}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded font-medium transition-colors text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Lista de envíos */}
       <div className="card">
         <h3 className="text-lg font-semibold mb-4">Envíos Activos (<span className="font-orbitron">{shipments.length}</span>)</h3>
@@ -240,6 +342,13 @@ export const AdminPanel = () => {
                     <p className="text-sm text-gray-600">{shipment.product}</p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => openUpdateModal(shipment)}
+                      className="px-3 py-1 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded border border-green-200 font-medium"
+                      title="Enviar actualización al cliente"
+                    >
+                      📍 Actualizar
+                    </button>
                     <select
                       value={shipment.status}
                       onChange={(e) => updateShipmentStatus(shipment.id, e.target.value)}

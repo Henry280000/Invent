@@ -19,7 +19,8 @@
     "jsonwebtoken": "^9.0.2",
     "dotenv": "^16.3.1",
     "body-parser": "^1.20.2",
-    "mqtt": "^5.3.4"
+    "mqtt": "^5.3.4",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

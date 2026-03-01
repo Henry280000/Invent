@@ -1,142 +1,94 @@
 import { useState, useEffect, useRef } from 'react';
-import mqttService from '../../services/mqttService';
-import protobufService from '../../services/protobufService';
-import hashChainService from '../../services/hashChainService';
-import alertService from '../../services/alertService';
+import apiService from '../../services/apiService';
 
 // Componentes
-import { SecurityCard } from '../sensors/SecurityCard';
-import { EnvironmentalCard } from '../sensors/EnvironmentalCard';
-import { ChemicalCard } from '../sensors/ChemicalCard';
-import { AlertSystem } from '../alerts/AlertSystem';
-import { HashChainViewer } from '../monitoring/HashChainViewer';
-import { DeviceInfo } from '../monitoring/DeviceInfo';
 import { LoadingSpinner } from '../ui/Indicators';
-import { SimulatorControls } from '../ui/SimulatorControls';
 
 /**
  * Dashboard principal de monitoreo IoT
  */
 export const MainDashboard = () => {
-  const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Estado de datos
-  const [currentData, setCurrentData] = useState(null);
-  const [dataHistory, setDataHistory] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [chainStats, setChainStats] = useState(null);
-  const [recentBlocks, setRecentBlocks] = useState([]);
+  // Estado de datos en tiempo real
+  const [stats, setStats] = useState(null);
+  const [temperatureData, setTemperatureData] = useState([]);
+  const [humidityData, setHumidityData] = useState([]);
+  const [ethyleneData, setEthyleneData] = useState([]);
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  // Configuración MQTT
-  const [mqttConfig, setMqttConfig] = useState({
-    url: 'ws://broker.emqx.io:8083/mqtt',
-    username: '',
-    password: '',
-    clientId: ''
-  });
-
-  const [showConfig, setShowConfig] = useState(false);
   const initialized = useRef(false);
 
-  // Inicialización
+  // Cargar datos desde MySQL
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
 
-    const initializeServices = async () => {
+    const loadData = async () => {
       try {
-        console.log('🚀 Initializing services...');
+        setLoading(true);
         
-        // Inicializar Protobuf
-        await protobufService.initialize();
+        // Cargar estadísticas
+        const statsData = await apiService.getIotStats();
+        setStats(statsData);
         
-        // Conectar a MQTT
-        await mqttService.connect(mqttConfig);
-
-        // Suscribirse a mensajes
-        const unsubscribe = mqttService.onMessage((message) => {
-          handleMqttMessage(message);
-        });
-
+        // Cargar últimas 10 lecturas de cada tipo
+        const tempData = await apiService.getIotByCategory('temperature', 10);
+        setTemperatureData(tempData.data || []);
+        
+        const humData = await apiService.getIotByCategory('humidity', 10);
+        setHumidityData(humData.data || []);
+        
+        const ethData = await apiService.getIotByCategory('ethylene', 10);
+        setEthyleneData(ethData.data || []);
+        
+        setLastUpdate(new Date());
         setLoading(false);
-
-        return () => {
-          unsubscribe();
-          mqttService.disconnect();
-        };
       } catch (err) {
-        console.error('❌ Initialization error:', err);
+        console.error('Error cargando datos:', err);
         setError(err.message);
         setLoading(false);
       }
     };
 
-    initializeServices();
+    loadData();
+
+    // Actualizar cada 10 segundos
+    const interval = setInterval(loadData, 10000);
+
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Manejar mensajes MQTT entrantes
-  const handleMqttMessage = (message) => {
-    console.log('📨 Message received:', message.type);
-
-    if (message.type === 'connection') {
-      setConnected(message.status === 'connected');
-    } else if (message.type === 'error') {
-      setError(message.error);
-    } else if (message.type === 'data') {
-      const { data } = message;
-      
-      // Actualizar datos actuales
-      setCurrentData(data);
-      setLastUpdate(message.receivedAt);
-
-      // Agregar al historial (mantener últimos 100)
-      setDataHistory(prev => {
-        const updated = [...prev, data];
-        return updated.slice(-100);
-      });
-
-      // Actualizar estadísticas de hash chain
-      setChainStats(hashChainService.getChainStats());
-      setRecentBlocks(hashChainService.getRecentBlocks(10));
-
-      // Analizar y generar alertas
-      const newAlerts = alertService.analyzeSensorData(data);
-      if (newAlerts.length > 0) {
-        console.log(`🚨 ${newAlerts.length} new alerts generated`);
-        setAlerts(alertService.getAlerts());
-      }
-    }
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('es-MX', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
   };
 
-  // Reconocer alerta
-  const handleAcknowledgeAlert = (alertId) => {
-    alertService.acknowledgeAlert(alertId);
-    setAlerts(alertService.getAlerts());
+  const getLatestValue = (dataArray) => {
+    if (!dataArray || dataArray.length === 0) return null;
+    return dataArray[0];
   };
 
-  // Reconectar MQTT
-  const handleReconnect = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await mqttService.disconnect();
-      await mqttService.connect(mqttConfig);
-      setLoading(false);
-    } catch (err) {
-      setError(err.message);
-      setLoading(false);
-    }
+  const getAverageValue = (dataArray) => {
+    if (!dataArray || dataArray.length === 0) return 0;
+    const sum = dataArray.reduce((acc, item) => acc + parseFloat(item.sensor_value), 0);
+    return (sum / dataArray.length).toFixed(2);
   };
 
-  // Actualizar configuración MQTT
-  const handleUpdateMqttConfig = async (newConfig) => {
-    setMqttConfig(newConfig);
-    setShowConfig(false);
-    await handleReconnect();
+  const getSeverityColor = (severity) => {
+    const normalizedSeverity = severity ? severity.toLowerCase() : 'normal';
+    const colors = {
+      normal: 'text-green-600',
+      warning: 'text-amber-600',
+      critical: 'text-red-600',
+    };
+    return colors[normalizedSeverity] || 'text-gray-600';
   };
 
   if (loading) {
@@ -144,122 +96,231 @@ export const MainDashboard = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <LoadingSpinner />
-          <p className="text-gray-600 mt-4">Inicializando servicios...</p>
+          <p className="text-gray-600 mt-4">Cargando datos...</p>
         </div>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 font-semibold">Error: {error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const latestTemp = getLatestValue(temperatureData);
+  const latestHum = getLatestValue(humidityData);
+  const latestEth = getLatestValue(ethyleneData);
+
   return (
-    <div className="space-y-4">
-      {/* Panel de configuración */}
-      {showConfig && (
-        <div className="card">
-          <h3 className="font-semibold mb-3">Configuración de Broker MQTT</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              type="text"
-              placeholder="URL del broker"
-              value={mqttConfig.url}
-              onChange={(e) => setMqttConfig({ ...mqttConfig, url: e.target.value })}
-              className="px-3 py-2 bg-white border border-gray-300 rounded text-sm"
-            />
-            <input
-              type="text"
-              placeholder="Client ID (opcional)"
-              value={mqttConfig.clientId}
-              onChange={(e) => setMqttConfig({ ...mqttConfig, clientId: e.target.value })}
-              className="px-3 py-2 bg-white border border-gray-300 rounded text-sm"
-            />
-            <input
-              type="text"
-              placeholder="Usuario (opcional)"
-              value={mqttConfig.username}
-              onChange={(e) => setMqttConfig({ ...mqttConfig, username: e.target.value })}
-              className="px-3 py-2 bg-white border border-gray-300 rounded text-sm"
-            />
-            <input
-              type="password"
-              placeholder="Contraseña (opcional)"
-              value={mqttConfig.password}
-              onChange={(e) => setMqttConfig({ ...mqttConfig, password: e.target.value })}
-              className="px-3 py-2 bg-white border border-gray-300 rounded text-sm"
-            />
+    <div className="space-y-6">
+      {/* Mensaje informativo */}
+      <div className="bg-blue-50 border border-blue-300 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <div className="text-2xl">ℹ️</div>
+          <div className="flex-1">
+            <p className="text-blue-900 font-semibold mb-1">Monitoreo en Tiempo Real</p>
+            <p className="text-blue-800 text-sm">
+              Datos actualizándose automáticamente cada 10 segundos desde MySQL. 
+              Cuando te conectes al Gateway WiFi (ESP32-Gateway-Hieleras), el simulador 
+              generará nuevos datos cada 30 segundos.
+            </p>
+            {lastUpdate && (
+              <p className="text-blue-700 text-xs mt-2">
+                ⏱️ Última actualización: {formatTimestamp(lastUpdate)}
+              </p>
+            )}
           </div>
-          <div className="flex gap-3 mt-3">
-            <button
-              onClick={() => handleUpdateMqttConfig(mqttConfig)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors"
-            >
-              Aplicar y reconectar
-            </button>
-            <button
-              onClick={() => setShowConfig(false)}
-              className="px-4 py-2 bg-white hover:bg-gray-50 border border-gray-300 rounded text-sm font-medium transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
-          <p className="text-xs text-gray-600 mt-2">
-            Topic: <code className="text-blue-700">food/transport/sensors/+</code>
-          </p>
-        </div>
-      )}
-
-      {error && (
-        <div className="card bg-red-50 border-red-500">
-          <p className="text-red-700 font-semibold">Error: {error}</p>
-        </div>
-      )}
-
-      {/* Dashboard Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Columna izquierda */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Sensores de Seguridad */}
-          <SecurityCard data={currentData?.security} />
-
-          {/* Sensores Ambientales */}
-          <EnvironmentalCard 
-            data={currentData?.environmental} 
-            history={dataHistory}
-          />
-
-          {/* Sensores Químicos */}
-          <ChemicalCard 
-            data={currentData?.chemical}
-            history={dataHistory}
-            environmental={currentData?.environmental}
-          />
-        </div>
-
-        {/* Columna derecha */}
-        <div className="space-y-4">
-          {/* Información del Dispositivo */}
-          <DeviceInfo 
-            data={currentData}
-            connected={connected}
-            lastUpdate={lastUpdate}
-          />
-
-          {/* Hash Chain Viewer */}
-          <HashChainViewer 
-            chainStats={chainStats}
-            recentBlocks={recentBlocks}
-          />
         </div>
       </div>
 
-      {/* Sistema de Alertas (ancho completo) */}
-      <div className="mt-4">
-        <AlertSystem 
-          alerts={alerts}
-          onAcknowledge={handleAcknowledgeAlert}
-        />
+      {/* Estadísticas Generales */}
+      {stats && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Estadísticas del Sistema</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-gray-600">Dispositivos Activos</p>
+              <p className="text-3xl font-bold text-blue-600">{stats.totals?.total_devices || 0}</p>
+            </div>
+            <div className="p-4 bg-green-50 rounded-lg">
+              <p className="text-sm text-gray-600">Lecturas (última hora)</p>
+              <p className="text-3xl font-bold text-green-600">{stats.totals?.total_readings || 0}</p>
+            </div>
+            <div className="p-4 bg-purple-50 rounded-lg">
+              <p className="text-sm text-gray-600">Camiones Monitoreados</p>
+              <p className="text-3xl font-bold text-purple-600">{stats.totals?.total_trucks || 0}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tarjetas de Sensores */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Temperatura */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <i className="fa-solid fa-temperature-half text-red-500"></i>
+              Temperatura
+            </h3>
+          </div>
+          
+          {latestTemp ? (
+            <>
+              <div className="mb-4">
+                <p className="text-4xl font-bold text-gray-900">
+                  {parseFloat(latestTemp.sensor_value).toFixed(2)} <span className="text-2xl text-gray-600">°C</span>
+                </p>
+                <p className={`text-sm font-medium ${getSeverityColor(latestTemp.severity)}`}>
+                  {latestTemp.severity}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatTimestamp(latestTemp.recorded_at)}
+                </p>
+              </div>
+              
+              <div className="border-t pt-3">
+                <p className="text-sm text-gray-600">Promedio últimas 10 lecturas:</p>
+                <p className="text-lg font-semibold text-gray-800">{getAverageValue(temperatureData)} °C</p>
+              </div>
+              
+              <div className="mt-3 space-y-1">
+                <p className="text-xs font-semibold text-gray-700">Últimas lecturas:</p>
+                {temperatureData.slice(0, 5).map((reading, idx) => (
+                  <div key={idx} className="flex justify-between text-xs text-gray-600">
+                    <span>{formatTimestamp(reading.recorded_at)}</span>
+                    <span className="font-medium">{parseFloat(reading.sensor_value).toFixed(2)} °C</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-500">Sin datos</p>
+          )}
+        </div>
+
+        {/* Humedad */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <i className="fa-solid fa-droplet text-blue-500"></i>
+              Humedad
+            </h3>
+          </div>
+          
+          {latestHum ? (
+            <>
+              <div className="mb-4">
+                <p className="text-4xl font-bold text-gray-900">
+                  {parseFloat(latestHum.sensor_value).toFixed(2)} <span className="text-2xl text-gray-600">%</span>
+                </p>
+                <p className={`text-sm font-medium ${getSeverityColor(latestHum.severity)}`}>
+                  {latestHum.severity}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatTimestamp(latestHum.recorded_at)}
+                </p>
+              </div>
+              
+              <div className="border-t pt-3">
+                <p className="text-sm text-gray-600">Promedio últimas 10 lecturas:</p>
+                <p className="text-lg font-semibold text-gray-800">{getAverageValue(humidityData)} %</p>
+              </div>
+              
+              <div className="mt-3 space-y-1">
+                <p className="text-xs font-semibold text-gray-700">Últimas lecturas:</p>
+                {humidityData.slice(0, 5).map((reading, idx) => (
+                  <div key={idx} className="flex justify-between text-xs text-gray-600">
+                    <span>{formatTimestamp(reading.recorded_at)}</span>
+                    <span className="font-medium">{parseFloat(reading.sensor_value).toFixed(2)} %</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-500">Sin datos</p>
+          )}
+        </div>
+
+        {/* Etileno */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <i className="fa-solid fa-smog text-purple-500"></i>
+              Etileno
+            </h3>
+          </div>
+          
+          {latestEth ? (
+            <>
+              <div className="mb-4">
+                <p className="text-4xl font-bold text-gray-900">
+                  {parseFloat(latestEth.sensor_value).toFixed(2)} <span className="text-2xl text-gray-600">ppm</span>
+                </p>
+                <p className={`text-sm font-medium ${getSeverityColor(latestEth.severity)}`}>
+                  {latestEth.severity}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatTimestamp(latestEth.recorded_at)}
+                </p>
+              </div>
+              
+              <div className="border-t pt-3">
+                <p className="text-sm text-gray-600">Promedio últimas 10 lecturas:</p>
+                <p className="text-lg font-semibold text-gray-800">{getAverageValue(ethyleneData)} ppm</p>
+              </div>
+              
+              <div className="mt-3 space-y-1">
+                <p className="text-xs font-semibold text-gray-700">Últimas lecturas:</p>
+                {ethyleneData.slice(0, 5).map((reading, idx) => (
+                  <div key={idx} className="flex justify-between text-xs text-gray-600">
+                    <span>{formatTimestamp(reading.recorded_at)}</span>
+                    <span className="font-medium">{parseFloat(reading.sensor_value).toFixed(2)} ppm</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-500">Sin datos</p>
+          )}
+        </div>
       </div>
 
-      {/* Controles del Simulador (flotante) */}
-      <SimulatorControls />
+      {/* Información del dispositivo */}
+      {latestTemp && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Información del Dispositivo</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-sm text-gray-600">Device ID</p>
+              <p className="font-semibold text-gray-900">{latestTemp.device_id}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Truck ID</p>
+              <p className="font-semibold text-gray-900">{latestTemp.truck_id}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Estado</p>
+              <p className="font-semibold text-green-600">● Activo</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Última Lectura</p>
+              <p className="font-semibold text-gray-900">{formatTimestamp(latestTemp.recorded_at)}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

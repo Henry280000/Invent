@@ -6,7 +6,6 @@ import { AdminPanel } from './components/admin/AdminPanel';
 import { ClientTracking } from './components/client/ClientTracking';
 import { MainDashboard } from './components/dashboard/MainDashboard';
 import IoTDataView from './components/iot/IoTDataView';
-import TestingView from './components/testing/TestingView';
 
 /**
  * Componente principal con autenticación y navegación
@@ -32,13 +31,21 @@ const AppContent = () => {
       <header className="mb-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-1">
-                Food Transport Dashboard
-              </h1>
-              <p className="text-gray-600 text-sm">
-                Monitoreo IoT de Carcasa Inteligente IP65 con LoRaWAN
-              </p>
+            <div className="flex items-center gap-4">
+              {/* Logo de la empresa */}
+              <img 
+                src="/logo-empresa.jpg" 
+                alt="Logo Empresa" 
+                className="h-16 w-auto object-contain"
+              />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-1">
+                  Food Transport Dashboard
+                </h1>
+                <p className="text-gray-600 text-sm">
+                  Monitoreo IoT de Carcasa Inteligente IP65 con LoRaWAN
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
@@ -77,18 +84,6 @@ const AppContent = () => {
             >
               Datos IoT
             </button>
-
-            <button
-              onClick={() => setCurrentView('testing')}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
-                currentView === 'testing'
-                  ? 'border-amber-600 text-amber-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <span className="text-lg">🔘</span>
-              Testing ESP32
-            </button>
             
             {isAdmin() && (
               <button
@@ -123,7 +118,6 @@ const AppContent = () => {
       <main className="max-w-7xl mx-auto">
         {currentView === 'dashboard' && <MainDashboard />}
         {currentView === 'iot-data' && <IoTDataView />}
-        {currentView === 'testing' && <TestingView />}
         {currentView === 'admin' && isAdmin() && <AdminPanel />}
         {currentView === 'tracking' && isClient() && <ClientTracking />}
       </main>

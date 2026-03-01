@@ -5,6 +5,8 @@ import apiService from '../../services/apiService';
 export const ClientTracking = () => {
   const { user } = useAuth();
   const [shipments, setShipments] = useState([]);
+  const [selectedShipmentUpdates, setSelectedShipmentUpdates] = useState({});
+  const [loadingUpdates, setLoadingUpdates] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -24,6 +26,24 @@ export const ClientTracking = () => {
     } catch (err) {
       setError('Error al cargar envíos: ' + err.message);
       setLoading(false);
+    }
+  };
+
+  const loadShipmentUpdates = async (shipmentId) => {
+    if (selectedShipmentUpdates[shipmentId]) {
+      // Si ya está expandido, colapsarlo
+      setSelectedShipmentUpdates(prev => ({ ...prev, [shipmentId]: null }));
+      return;
+    }
+
+    try {
+      setLoadingUpdates(prev => ({ ...prev, [shipmentId]: true }));
+      const data = await apiService.getShipmentUpdates(shipmentId);
+      setSelectedShipmentUpdates(prev => ({ ...prev, [shipmentId]: data.updates || [] }));
+    } catch (err) {
+      console.error('Error al cargar actualizaciones:', err);
+    } finally {
+      setLoadingUpdates(prev => ({ ...prev, [shipmentId]: false }));
     }
   };
 
@@ -186,6 +206,75 @@ export const ClientTracking = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Botón para ver actualizaciones */}
+              <div className="mt-4">
+                <button
+                  onClick={() => loadShipmentUpdates(shipment.id)}
+                  className={`w-full px-4 py-2 rounded font-medium text-sm transition-colors ${
+                    selectedShipmentUpdates[shipment.id]
+                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {loadingUpdates[shipment.id] ? (
+                    '⏳ Cargando...'
+                  ) : selectedShipmentUpdates[shipment.id] ? (
+                    '▲ Ocultar Actualizaciones'
+                  ) : (
+                    '📍 Ver Actualizaciones de Ubicación'
+                  )}
+                </button>
+              </div>
+
+              {/* Actualizaciones desplegables */}
+              {selectedShipmentUpdates[shipment.id] && selectedShipmentUpdates[shipment.id].length > 0 && (
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                    📋 Historial de Actualizaciones
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedShipmentUpdates[shipment.id].map((update, idx) => (
+                      <div
+                        key={update.id}
+                        className={`p-3 rounded-lg ${
+                          idx === 0 ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg">
+                            {idx === 0 ? '📍' : '📌'}
+                          </span>
+                          <div className="flex-1">
+                            {update.location && (
+                              <p className="text-xs font-semibold text-blue-700 mb-1">
+                                📍 {update.location}
+                              </p>
+                            )}
+                            <p className="text-sm text-gray-900">{update.message}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(update.created_at).toLocaleString('es-ES', {
+                                day: '2-digit',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedShipmentUpdates[shipment.id] && selectedShipmentUpdates[shipment.id].length === 0 && (
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                  <p className="text-sm text-gray-500 text-center py-3">
+                    No hay actualizaciones disponibles para este envío
+                  </p>
+                </div>
+              )}
 
               {/* Ubicación simulada */}
               {shipment.currentLocation && (

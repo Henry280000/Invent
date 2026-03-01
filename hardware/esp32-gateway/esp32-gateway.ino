@@ -67,7 +67,7 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingDat
     dataReceived[index] = true;
     
     // Log en Serial Monitor con MAC del remitente
-    Serial.printf("📦 Hielera %d: Temp=%.1f°C, Hum=%.1f%%, Eth=%.1fppm", 
+    Serial.printf("📦 Recibido de HIELERA_%d: Temp=%.1f°C, Hum=%.1f%%, Eth=%.1fppm", 
                   incomingData.id, 
                   incomingData.temp, 
                   incomingData.hum, 
@@ -79,9 +79,14 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingDat
                   recv_info->src_addr[2], recv_info->src_addr[3], 
                   recv_info->src_addr[4], recv_info->src_addr[5]);
     
-    // Enviar inmediatamente por WebSocket si hay clientes conectados
+    // ✅ SIEMPRE enviar inmediatamente por WebSocket
+    Serial.printf("📤 Enviando a backend vía WebSocket...\n");
+    sendDataToClients(index);
+    
     if (connectedClients > 0) {
-      sendDataToClients(index);
+      Serial.printf("✅ Enviado a %d cliente(s) conectado(s)\n", connectedClients);
+    } else {
+      Serial.println("⚠️  Sin clientes WebSocket (backend no conectado)");
     }
   } else {
     Serial.printf("❌ ID de hielera inválido: %d\n", incomingData.id);
